@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8" />
+<title>MBTI 測試（測試一次）</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --bg:#f5f7fb; --card:#fff; --muted:#666;
+  }
+  body{
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans CJK TC", "Helvetica Neue", Arial;
+    background:var(--bg);
+    margin:0; padding:32px; color:#111;
+    display:flex; flex-direction:column; align-items:center;
+  }
+  h1{margin:0 0 18px; font-size:20px;}
+  .wrap{width:960px; max-width:96%; background:var(--card); padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.06);}
+  .slots{display:flex; gap:18px; justify-content:center; margin:18px 0 8px;}
+  .slot{
+    width:120px; height:120px; border-radius:12px; background:#fff; border:1px solid #e6e9ef;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    box-shadow:0 4px 14px rgba(16,24,40,0.04);
+  }
+  .result-wrap {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 14px;
+  min-height: 40px;
+  }
+  .char{font-size:48px; font-weight:700; user-select:none;}
+  .slot button{margin-top:10px; padding:6px 12px; border-radius:999px; border:0; background:#333; color:#fff; cursor:pointer;}
+  .slot button.paused{background:#c0392b;}
+  .controls{display:flex; justify-content:space-between; gap:12px; margin-top:12px;}
+  .controls-left, .controls-right{display:flex; gap:12px; align-items:center;}
+  button.main{padding:10px 18px; border-radius:999px; border:0; cursor:pointer; background:#111; color:#fff; font-weight:600;}
+  button.main:disabled{opacity:.45; cursor:not-allowed;}
+  #status{min-height:28px; font-size:16px; color:var(--muted); display:flex; align-items:center;}
+  /* 稀有樣式 */
+  .rare-color{ color:#8a2be2; } /* 紫 */
+  .super-color {
+  color: gold;
+  text-shadow: 0 0 6px rgba(218,165,32,0.8);
+  animation: goldBlink 1s infinite;
+  }
+  @keyframes goldBlink {
+    0%, 100% { text-shadow: 0 0 6px rgba(218,165,32,0.8); }
+   50%      { text-shadow: 0 0 20px rgba(255,215,0,1); }
+  }
+  /* 傳說：文字漸變 (透過 JS 改色) */
+  .legend-span {
+  display: inline-block;
+  will-change: transform,color;
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0 1px;
+  animation: legendShake 0.15s infinite, legendColor 1s infinite linear;
+  }
+  @keyframes legendShake {
+    0% { transform: translateY(0); }
+    25% { transform: translateY(-1px); }
+    50% { transform: translateY(1px); }
+    75% { transform: translateY(-1px); }
+    100% { transform: translateY(0); }
+  }
+  @keyframes legendColor {
+    0%   { color: #ffb6c1; } /* 粉 */
+    33%  { color: #00ffff; } /* 青 */
+    66%  { color: #ffff00; } /* 黃 */
+   100% { color: #ffb6c1; } /* 粉 */
+  }
+
+  /* hide native controls if any */
+  video::-internal-media-controls { display:none; }
+</style>
+</head>
+<body>
+  <div class="wrap" role="main">
+    <h1>MBTI 測試（測試一次）</h1>
+
+    <div class="slots" id="slots">
+      <!-- slots will be injected -->
+    </div>
+
+    <div class="controls" style="display:flex; justify-content:center; gap:20px; margin-top:10px;">
+     <button class="main" id="startBtn">開始測驗</button>
+     <button class="main" id="pauseAllBtn">一鍵暫停</button>
+    </div>
+
+    <div id="status" style="margin-top:12px;">
+      <div id="drawCounter">測驗次數：0</div>
+    </div>
+
+    <div class="result-wrap">
+      <div id="resultArea" class="result-text"></div>
+    </div>
+  </div>
+
+  <!-- hidden video element -->
+  <video id="specialVideo" playsinline webkit-playsinline style="display:none;"></video>
+
+<script>
+/* ==========================================================
+   MBTI 單抽系統（自動回傳，彩蛋 500~504 支援）
+========================================================== */
+
+/* pools */
+const MBTI_LIST = ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP','SISD','SIMD','MISD','MIMD','SINE','HTTP','HTML','JAVA','JSON','GAME','OTTO','GPT5','IKEA','VRAM','CNMD','EEEE','開始測驗','一鍵暫停','非想天則','SEGA','GOJO','FUNK'];
+const RARE_POOL = ['NIKE','CMYK','JPEG','WIFI','9331','1145’,’2486’,’MBTI','NACL','NAOH','XBOX','BOTW','TOTK','NIER','TOBE','P4U2','OMFG','ADHD','CIAO','VISA','Elif','PSJK','CNMB','傳說稀有','越古越強'];
+const SUPER_POOL = ['NULL','NMSL','TETO','NSFW','ACGN','YMCA','SINE','KOBE','MEME','GOLD','BAKA','一瞬千擊','千戀萬花','義大利麵'];
+const LEGEND_POOL = ['NIGA','BDSM','FUTA','MIKU','OIIA','RARE','HOMO','伊邪那岐','苦命鴛鴦','古明地戀'];
+
+const RATES = { normal:50, rare:30, super:15, legend:5 };
+
+/* 彩蛋 */
+const specialCountMap = { 7: '-BO-', 8: 'YUAN', 10: 'RICK', 15: 'SUPE', 20: 'MYGO' };
+const EGG_POOL = { 500: '-BO-', 501: 'YUAN', 502: 'RICK', 503: 'SUPE', 504: 'MYGO' };
+const videoMap = { 'RICK': 'video/rick.mp4', 'SUPE': 'video/supe.mp4', 'MYGO': 'video/mygo.mp4' };
+
+/* letters used for rolling display */
+const ROLL_CHARS = ['I','E','N','S','T','F','J','P','?','X'];
+
+/* state */
+let drawCount = 0;
+let isCooling = false;
+let isLocked = false;
+let targetStr = '';
+let targetChars = [];
+let targetRarity = 'normal';
+let spinIntervals = [null,null,null,null];
+let legendInterval = null;
+
+/* DOM */
+const slotsWrap = document.getElementById('slots');
+const startBtn = document.getElementById('startBtn');
+const pauseAllBtn = document.getElementById('pauseAllBtn');
+const drawCounter = document.getElementById('drawCounter');
+const resultArea = document.getElementById('resultArea');
+const specialVideo = document.getElementById('specialVideo');
+
+/* create slots */
+for(let i=0;i<4;i++){
+  const slot = document.createElement('div');
+  slot.className = 'slot';
+  slot.dataset.index = String(i);
+
+  const ch = document.createElement('div');
+  ch.className = 'char';
+  ch.textContent = '?';
+
+  const btn = document.createElement('button');
+  btn.textContent = '暫停';
+  btn.type = 'button';
+  btn.addEventListener('click', ()=> slotPause(i) );
+
+  slot.appendChild(ch);
+  slot.appendChild(btn);
+  slotsWrap.appendChild(slot);
+}
+
+/* helpers */
+function pickFromPoolByRarity(rarity){
+  if(rarity === 'legend') return LEGEND_POOL[Math.floor(Math.random()*LEGEND_POOL.length)];
+  if(rarity === 'super') return SUPER_POOL[Math.floor(Math.random()*SUPER_POOL.length)];
+  if(rarity === 'rare')  return RARE_POOL[Math.floor(Math.random()*RARE_POOL.length)];
+  return MBTI_LIST[Math.floor(Math.random()*MBTI_LIST.length)];
+}
+
+function getRarityOnce(){
+  const r = Math.random()*100;
+  if(r < RATES.legend) return 'legend';
+  if(r < RATES.legend + RATES.super) return 'super';
+  if(r < RATES.legend + RATES.super + RATES.rare) return 'rare';
+  return 'normal';
+}
+
+function decideFullResult(){
+  drawCount++;
+  drawCounter.textContent = '測驗次數：' + drawCount;
+
+  // 特定次數彩蛋
+  if(specialCountMap[drawCount]){
+    targetStr = specialCountMap[drawCount];
+    targetRarity = 'normal';
+    return;
+  }
+
+  const r = getRarityOnce();
+  targetRarity = r;
+  targetStr = pickFromPoolByRarity(r);
+
+  if(typeof targetStr !== 'string') targetStr = String(targetStr);
+  if(targetStr.length < 4) targetStr = targetStr.padEnd(4,'?');
+  else if(targetStr.length > 4) targetStr = targetStr.slice(0,4);
+}
+
+function startSpinning(){
+  resultArea.textContent = '';
+  resultArea.className = 'result-text';
+
+  const slotEls = document.querySelectorAll('.slot');
+  slotEls.forEach((slot, idx) => {
+    const btn = slot.querySelector('button');
+    btn.classList.remove('paused');
+    btn.textContent = '暫停';
+    if(spinIntervals[idx]) { clearInterval(spinIntervals[idx]); spinIntervals[idx] = null; }
+
+    const charEl = slot.querySelector('.char');
+    spinIntervals[idx] = setInterval(()=>{
+      if(!btn.classList.contains('paused')){
+        const c = ROLL_CHARS[Math.floor(Math.random()*ROLL_CHARS.length)];
+        charEl.textContent = c;
+      }
+    }, 20);
+    charEl.textContent = ROLL_CHARS[Math.floor(Math.random()*ROLL_CHARS.length)];
+  });
+}
+
+function slotPause(index){
+  if(isLocked) return;
+  const slot = document.querySelector(`.slot[data-index="${index}"]`);
+  const btn = slot.querySelector('button');
+  if(btn.classList.contains('paused')) return;
+
+  clearInterval(spinIntervals[index]);
+  spinIntervals[index] = null;
+  const charEl = slot.querySelector('.char');
+  charEl.textContent = targetChars[index] || '?';
+  btn.classList.add('paused');
+  btn.textContent = '已暫停';
+
+  if(Array.from(document.querySelectorAll('.slot button')).every(b => b.classList.contains('paused'))){
+    finalizeResult();
+  }
+}
+
+function pauseAllSlots(){
+  if(isLocked) return;
+  const slotEls = document.querySelectorAll('.slot');
+  slotEls.forEach((slot, idx) => {
+    const btn = slot.querySelector('button');
+    if(!btn.classList.contains('paused')){
+      clearInterval(spinIntervals[idx]);
+      spinIntervals[idx] = null;
+      slot.querySelector('.char').textContent = targetChars[idx] || '?';
+      btn.classList.add('paused');
+      btn.textContent = '已暫停';
+    }
+  });
+  finalizeResult();
+}
+
+function finalizeResult(){
+  if(legendInterval){ clearInterval(legendInterval); legendInterval = null; }
+
+  resultArea.innerHTML = '';
+  const prefix = document.createElement('span');
+  prefix.textContent = '你的人格類型是 ';
+  resultArea.appendChild(prefix);
+
+  if(targetRarity === 'normal'){
+    const txt = document.createElement('span');
+    txt.textContent = targetStr;
+    txt.style.color = '#000';
+    txt.style.fontWeight = '700';
+    resultArea.appendChild(txt);
+  } else if(targetRarity === 'rare'){
+    const txt = document.createElement('span');
+    txt.textContent = targetStr;
+    txt.className = 'rare-color';
+    txt.style.fontWeight = '700';
+    resultArea.appendChild(txt);
+  } else if(targetRarity === 'super'){
+    const txt = document.createElement('span');
+    txt.textContent = targetStr;
+    txt.className = 'super-color';
+    txt.style.fontWeight = '800';
+    txt.style.fontSize = '20px';
+    resultArea.appendChild(txt);
+  } else {
+    const container = document.createElement('span');
+    container.setAttribute('aria-hidden','true');
+    container.style.display = 'inline-block';
+    const spans = [];
+    for(let i=0;i<targetStr.length;i++){
+      const s = document.createElement('span');
+      s.className = 'legend-span';
+      s.textContent = targetStr[i];
+      container.appendChild(s);
+      spans.push(s);
+    }
+    resultArea.appendChild(container);
+
+    let baseHue = 0;
+    const waveLength = 2.4;
+    legendInterval = setInterval(()=>{
+      spans.forEach((s,i)=>{
+        const hue = Math.round((baseHue + i * (360 / (targetStr.length * waveLength))) % 360);
+        s.style.color = `hsl(${hue},100%,50%)`;
+        const y = Math.sin((baseHue/20) + i*0.6) * 4;
+        s.style.transform = `translateY(${y}px)`;
+      });
+      baseHue = (baseHue + 0.8) % 360;
+    }, 80);
+  }
+
+  if(['RICK','SUPE','MYGO'].includes(targetStr)){
+    isLocked = true;
+    startBtn.disabled = true;
+    pauseAllBtn.disabled = true;
+    document.querySelectorAll('.slot button').forEach(b=>b.disabled = true);
+
+    setTimeout(()=>{
+      const file = videoMap[targetStr];
+      if(file){
+        playFullScreenVideo(file).then(()=>{
+          isLocked = false;
+          startBtn.disabled = false;
+          pauseAllBtn.disabled = false;
+          document.querySelectorAll('.slot button').forEach(b=>b.disabled = false);
+          sendResultToGallery(); // auto send after video
+        });
+      } else {
+        isLocked = false;
+        startBtn.disabled = false;
+        pauseAllBtn.disabled = false;
+        document.querySelectorAll('.slot button').forEach(b=>b.disabled = false);
+        sendResultToGallery(); // auto send
+      }
+    }, 2000);
+  } else {
+    sendResultToGallery(); // auto send immediately for normal draws
+  }
+}
+
+function getNumericCode(){
+  // 彩蛋優先
+  const eggEntry = Object.entries(EGG_POOL).find(([code, egg]) => egg === targetStr);
+  if(eggEntry) return eggEntry[0]; // 返回 500~504
+
+  let rarityNum;
+  switch(targetRarity){
+    case 'legend': rarityNum = 4; break;
+    case 'super':  rarityNum = 3; break;
+    case 'rare':   rarityNum = 2; break;
+    default:       rarityNum = 1;
+  }
+
+  let pool, index;
+  if(targetRarity === 'legend') pool = LEGEND_POOL;
+  else if(targetRarity === 'super') pool = SUPER_POOL;
+  else if(targetRarity === 'rare') pool = RARE_POOL;
+  else pool = MBTI_LIST;
+
+  index = Math.max(0, pool.indexOf(targetStr));
+  if(index > 99) index = 99;
+
+  return `${rarityNum}${index.toString().padStart(2,'0')}`;
+}
+
+function sendResultToGallery(){
+  const code = getNumericCode(); // 自動產生代碼
+
+  // ===== ✅ 正確寫入主頁用的儲存區 =====
+  let saved = localStorage.getItem('drawResults');
+  try { saved = saved ? JSON.parse(saved) : []; } catch(e){ saved = []; }
+  if(!Array.isArray(saved)) saved = [];
+  saved.push(code);
+  localStorage.setItem('drawResults', JSON.stringify(saved));
+
+  console.log('✅ 已傳送至主頁：', code);
+}
+
+function playFullScreenVideo(src){
+  return new Promise((resolve) => {
+    specialVideo.src = src;
+    specialVideo.style.display = 'block';
+    specialVideo.currentTime = 0;
+    if(specialVideo.requestFullscreen) specialVideo.requestFullscreen();
+    else if(specialVideo.webkitRequestFullscreen) specialVideo.webkitRequestFullscreen();
+    specialVideo.play().catch(()=>{});
+
+    function endedHandler(){
+      specialVideo.pause();
+      specialVideo.style.display = 'none';
+      try { if(document.fullscreenElement) document.exitFullscreen(); } catch(e){}
+      cleanup();
+      resolve();
+    }
+    function cleanup(){
+      specialVideo.removeEventListener('ended', endedHandler);
+      specialVideo.removeEventListener('pause', endedHandler);
+      specialVideo.src = '';
+    }
+    specialVideo.addEventListener('ended', endedHandler);
+    specialVideo.addEventListener('pause', function onPause(){
+      if(!specialVideo.duration || Math.abs(specialVideo.duration - specialVideo.currentTime) < 0.4){
+        endedHandler();
+      }
+    });
+  });
+}
+
+function startDraw(){
+  if(isCooling || isLocked) return;
+  isCooling = true;
+  startBtn.disabled = true;
+  setTimeout(()=>{ isCooling = false; startBtn.disabled = false; }, 1000);
+
+  decideFullResult();
+  targetChars = targetStr.split('').slice(0,4);
+  while(targetChars.length < 4) targetChars.push('?');
+  document.querySelectorAll('.slot button').forEach(b => { b.classList.remove('paused'); b.disabled = false; b.textContent='暫停';});
+  startSpinning();
+  resultArea.textContent = '';
+}
+
+startBtn.addEventListener('click', startDraw);
+pauseAllBtn.addEventListener('click', pauseAllSlots);
+window.__mbti_state = ()=>({ drawCount, targetStr, targetRarity, isLocked });
+</script>
+</body>
+</html>

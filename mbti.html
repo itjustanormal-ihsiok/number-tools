@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>MBTI 測驗入口</title>
+<style>
+body { font-family: system-ui, sans-serif; background:#f5f5f5; text-align:center; padding:40px; }
+button { padding:12px 20px; font-size:16px; margin:12px; border-radius:999px; border:none; cursor:pointer; background:#222; color:white; }
+#status { margin-top:20px; font-size:16px; }
+#gallery { margin-top:20px; max-width:900px; margin-left:auto; margin-right:auto; text-align:left; }
+.rarity-block { margin-bottom:28px; }
+.rarity-block h3{ margin:8px 0; }
+.rarity-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+.card-slot{ border:2px solid #333; border-radius:10px; padding:10px; background:#fff; text-align:center; font-weight:bold; min-height:60px; display:flex; align-items:center; justify-content:center; cursor:default; }
+.card-slot.unknown{ color:#aaa; }
+.card-slot.clickable{ cursor:pointer; }
+
+/* 稀有特效 */
+.rare-color{ color:#c837e2; }
+.super-color{ color: gold; text-shadow: 0 0 6px rgba(218,165,32,0.8); animation: goldBlink 1s infinite; }
+@keyframes goldBlink{ 0%,100%{ text-shadow:0 0 6px rgba(218,165,32,0.8);} 50%{ text-shadow:0 0 20px rgba(255,215,0,1);} }
+.legend-span{ display:inline-block; font-weight:700; font-size:18px; margin:0 1px; animation: legendShake 0.15s infinite, legendColor 1s infinite linear; }
+@keyframes legendShake{ 0%{transform:translateY(0);} 25%{transform:translateY(-1px);} 50%{transform:translateY(1px);} 75%{transform:translateY(-1px);} 100%{transform:translateY(0);} }
+@keyframes legendColor{ 0%{color:#ffb6c1;}33%{color:#00ffff;}66%{color:#ffff00;}100%{color:#ffb6c1;} }
+
+#personalityResult{ margin-top:18px; font-size:20px; font-weight:700; }
+.clear-btn{ background:#b00; color:white; }
+#debugPanel{ position:fixed; bottom:10px; right:10px; padding:8px; background:#000; color:#0f0; font-family:monospace; font-size:12px; max-height:200px; overflow:auto; display:none; }
+</style>
+</head>
+<body>
+<h1>MBTI 測驗系統</h1>
+
+<button onclick="window.open('mbtis.html', 'mbtiSingle')">單抽</button>
+<button onclick="window.open('mbtit.html', 'mbtiTen')">十連抽</button>
+
+<div id="status">測驗次數：<span id="drawCount">0</span></div>
+<div id="personalityResult">點擊已擁有人格以查看</div>
+
+<div id="gallery">
+  <h2>人格圖鑑</h2>
+  <div id="galleryContainer"></div>
+</div>
+
+<button class="clear-btn" onclick="clearGallery()">清空圖鑑</button>
+<div id="debugPanel"><strong>Debug</strong><br></div>
+
+<script>
+// 稀有度對應
+const RARITY_LABEL = {1:'普通',2:'稀有',3:'超稀有',4:'傳說稀有',5:'EX'};
+const RARITY_CLASS = {1:'',2:'rare-color',3:'super-color',4:'legend-span',5:''};
+
+// 卡池
+const RARITY_MAP = {
+  1: ['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP','SISD','SIMD','MISD','MIMD','SINE','HTTP','HTML','JAVA','JSON','GAME','OTTO','GPT5','IKEA','VRAM','CNMD','EEEE','SEGA','GOJO','FUNK','開始測驗','一鍵暫停','非想天則'],
+  2: ['NIKE','CMYK','JPEG','WIFI','9331','1145','2486','MBTI','NACL','NAOH','XBOX','BOTW','TOTK','NIER','TOBE','P4U2','OMFG','ADHD','CIAO','VISA','Elif','PSJK','CNMB','傳說稀有','越古越強'],
+  3: ['NULL','NMSL','TETO','NSFW','ACGN','YMCA','SINE','KOBE','MEME','GOLD','BAKA','一瞬千擊','千戀萬花','義大利麵'],
+  4: ['NIGA','BDSM','FUTA','MIKU','OIIA','RARE','HOMO','伊邪那岐','苦命鴛鴦','古明地戀'],
+  5: ['-BO-','YUAN','RICK','SUPE','MYGO']
+};
+
+let drawCount = 0;
+let galleryData = [];
+
+// 建立圖鑑格子
+function buildGallerySkeleton(){
+  const container = document.getElementById('galleryContainer');
+  container.innerHTML = '';
+  Object.keys(RARITY_MAP).map(Number).sort((a,b)=>a-b).forEach(rarity=>{
+    const block = document.createElement('div');
+    block.className = 'rarity-block';
+    const title = document.createElement('h3');
+    const spanLabel = document.createElement('span');
+    if(rarity===4) {
+      spanLabel.innerHTML = [...RARITY_LABEL[rarity]].map(c=>`<span class="legend-span">${c}</span>`).join('');
+    } else {
+      spanLabel.textContent = RARITY_LABEL[rarity];
+      if(RARITY_CLASS[rarity]) spanLabel.className = RARITY_CLASS[rarity];
+    }
+    title.appendChild(spanLabel);
+
+    const grid = document.createElement('div'); grid.className='rarity-grid';
+    RARITY_MAP[rarity].forEach((name,index)=>{
+      const slot=document.createElement('div');
+      slot.className='card-slot unknown';
+      slot.dataset.key=`${rarity}-${index}`;
+      slot.dataset.rarity=rarity; slot.dataset.index=index;
+      slot.textContent='？？？';
+      grid.appendChild(slot);
+    });
+    block.appendChild(title); block.appendChild(grid);
+    container.appendChild(block);
+  });
+}
+
+// 載入已抽過
+function loadSavedGallery(){
+  let saved=[];
+  try{ saved=JSON.parse(localStorage.getItem('mbtiGallery')||'[]'); }catch(e){ saved=[]; }
+  if(!Array.isArray(saved)) saved=[];
+  galleryData = saved;
+  galleryData.forEach(item=>renderSlot(item));
+
+  // drawCount 直接等於圖鑑總數
+  drawCount = galleryData.reduce((s,i)=>s+(i.count||0),0);
+  updateStatus();
+}
+
+// 渲染單格
+function renderSlot(entry){
+  const key=`${entry.rarity}-${entry.index}`;
+  const slot=document.querySelector(`[data-key="${key}"]`);
+  if(!slot) return;
+  const name=(RARITY_MAP[entry.rarity]&&RARITY_MAP[entry.rarity][entry.index])||'?';
+  slot.classList.remove('unknown'); slot.classList.add('clickable');
+
+  if(entry.rarity===4){
+     // 只顯示名字 + 數量，不再重複稀有度標籤
+    slot.innerHTML=`${[...name].map(c=>`<span class="legend-span">${c}</span>`).join('')} × ${entry.count}`;
+    } else {
+    const cls=RARITY_CLASS[entry.rarity]||'';
+    slot.innerHTML=`<span class="${cls}">${name}</span> × ${entry.count}`;
+}
+
+  slot.onclick=()=>showPersonality(name,entry.rarity);
+}
+
+// 點擊顯示人格
+function showPersonality(name,rarity){
+  const box=document.getElementById('personalityResult');
+  if(rarity===4){
+    const rarityText = [...RARITY_LABEL[rarity]].map(c=>`<span class="legend-span">${c}</span>`).join('');
+    box.innerHTML=`您的人格為：${[...name].map(c=>`<span class="legend-span">${c}</span>`).join('')} （${rarityText}）`;
+  } else {
+    const cls=RARITY_CLASS[rarity]||'';
+    box.innerHTML=`您的人格為：<span class="${cls}">${name}</span> （<span class="${cls}">${RARITY_LABEL[rarity]}</span>）`;
+  }
+}
+
+// 接收抽卡
+window.addEventListener('storage', e=>{
+  if(e.key!=='drawResults') return;
+  let list=[];
+  try{ list=JSON.parse(e.newValue||'[]'); }catch{ return; }
+  if(!Array.isArray(list)||list.length===0) return;
+  const latest=list[list.length-1];
+  handleIncomingCode(latest);
+});
+
+function handleIncomingCode(code){
+  code = String(code).padStart(3,'0');
+  const rarity = parseInt(code[0], 10);
+  const index = parseInt(code.slice(1,3), 10);
+
+  let item = galleryData.find(i => i.rarity === rarity && i.index === index);
+  if(item){
+    item.count++; // 單格 +1
+  } else {
+    item = {rarity, index, count: 1};
+    galleryData.push(item);
+  }
+
+  localStorage.setItem('mbtiGallery', JSON.stringify(galleryData));
+  renderSlot(item);
+
+  // 用圖鑑總數重新計算 drawCount
+  drawCount = galleryData.reduce((s,i)=>s + (i.count || 0), 0);
+  updateStatus();
+}
+
+function updateStatus(){
+  document.getElementById('drawCount').textContent = drawCount;
+}
+
+function clearGallery(){ 
+  if(!confirm('確定清空？')) return;
+  galleryData=[]; drawCount=0;
+  localStorage.removeItem('mbtiGallery');
+  buildGallerySkeleton(); loadSavedGallery();
+  updateStatus();
+  document.getElementById('personalityResult').textContent='點擊已擁有人格以查看';
+}
+
+// init
+buildGallerySkeleton();
+loadSavedGallery();
+
+// debug
+window.__mbti_state=()=>({drawCount,galleryData});
+</script>
+</body>
+</html>

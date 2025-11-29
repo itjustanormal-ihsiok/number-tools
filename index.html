@@ -44,6 +44,7 @@
       gap: 20px;
       justify-content: center;
       flex-wrap: wrap;
+      margin-bottom: 40px;
     }
 
     .tool {
@@ -73,10 +74,52 @@
       line-height: 1.6;
     }
 
+    .bottom-links {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 40px;
+    }
+
+    .bottom-links a {
+      text-decoration: none;
+      color: #007BFF;
+      font-size: 14px;
+    }
+
     footer {
       margin-top: 60px;
       font-size: 13px;
       color: #888;
+    }
+
+    .modal {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      width: 350px;
+      text-align: center;
+      position: relative;
+    }
+
+    .close {
+      position: absolute;
+      right: 20px;
+      top: 10px;
+      cursor: pointer;
+      font-size: 26px;
     }
   </style>
 </head>
@@ -93,19 +136,201 @@
   <div class="tools">
     <a class="tool" href="proof.html">
       <h2>數字論證系統</h2>
-      <p></p>
     </a>
 
     <a class="tool" href="mbti.html">
       <h2>MBTI小測驗</h2>
-      <p></p>
     </a>
+
+    <a class="tool" href="prime.html">
+      <h2>質數計算器</h2>
+      <p>新增功能！</p>
+    </a>
+
+    <a class="tool" href="#">
+      <h2>未想好</h2>
+      <p>未來功能預留位置</p>
+    </a>
+  </div>
+
+  <div class="bottom-links">
+    <a href="#" id="rateLink">為網站評分</a>
+    <a href="download.zip">下載離線版本</a>
   </div>
 
   <footer>
     看這行的人是給
   </footer>
 </div>
+
+<!-- 評分小窗 -->
+<div id="ratingModal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <span id="closeRating" class="close">&times;</span>
+
+    <h2>為網站評分</h2>
+
+    <!-- 星星顯示 -->
+    <div id="starDisplay" style="font-size: 30px; margin-bottom: 20px;">
+      ⭐ 0
+    </div>
+
+    <!-- 五個按鈕 -->
+    <div id="calcButtons" style="display: flex; flex-direction: column; gap: 10px;"></div>
+
+    <!-- 送出 -->
+    <button id="submitRating" style="margin-top:20px; padding:10px 15px;">送出評分</button>
+
+    <p id="ratingMsg" style="color:red; height:20px"></p>
+  </div>
+</div>
+
+<script>
+let currentStars = 0;
+let operationPool = [];
+let normalOps = [];
+let rerollOps = [];
+
+// 開啟評分視窗
+document.getElementById("rateLink").addEventListener("click", () => {
+  document.getElementById("ratingModal").style.display = "flex";
+});
+
+// 關閉視窗
+document.getElementById("closeRating").addEventListener("click", () => {
+  document.getElementById("ratingModal").style.display = "none";
+});
+
+// 讀取 XML
+fetch("rating_pool.xml")
+  .then(res => res.text())
+  .then(str => (new DOMParser()).parseFromString(str, "text/xml"))
+  .then(xml => {
+    const items = xml.getElementsByTagName("item");
+
+    for (let it of items) {
+      const formulaText = it.getAttribute("formula").trim();
+      const isReroll = it.getAttribute("refresh") === "true";
+
+      const data = { formula: formulaText, reroll: isReroll };
+
+      operationPool.push(data);
+      if (isReroll) rerollOps.push(data);
+      else normalOps.push(data);
+    }
+
+    generateButtons();
+  });
+
+// 產生按鈕組
+function generateButtons() {
+  const container = document.getElementById("calcButtons");
+  container.innerHTML = "";
+
+  // 前四個：正常公式
+  for (let i = 0; i < 4; i++) {
+    const op = normalOps[Math.floor(Math.random() * normalOps.length)];
+    const btn = document.createElement("button");
+    btn.innerText = op.formula;
+    btn.onclick = () => applyOperation(op);
+    container.appendChild(btn);
+  }
+
+  // 第五個：刷新公式
+  const op = rerollOps[Math.floor(Math.random() * rerollOps.length)];
+  const btn = document.createElement("button");
+  btn.innerText = op.formula + "（刷新）";
+  btn.onclick = () => applyOperation(op);
+  container.appendChild(btn);
+}
+
+// 套用計算式
+function applyOperation(op) {
+  let x = currentStars;
+
+  try {
+    let calc = new Function("x", "return " + op.formula);
+    let result = calc(x);
+
+    if (isNaN(result) || !isFinite(result)) throw "Invalid";
+
+    // 保留六位小數
+    currentStars = parseFloat(result.toFixed(6));
+
+    updateStarDisplay();
+
+    // 若為刷新類型 → 重新抽選五顆按鈕
+    if (op.reroll) generateButtons();
+
+  } catch (err) {
+    alert("計算錯誤（可能是 x 的值太大或公式有問題）");
+  }
+}
+
+// 更新星星顯示
+function updateStarDisplay() {
+  const starInt = Math.max(0, Math.floor(currentStars)); // 顯示整數顆
+  const display = document.getElementById("starDisplay");
+
+  display.innerHTML =
+    "⭐".repeat(starInt) +
+    `<br>( ${currentStars} / 5 )`;
+}
+
+// 送出評價
+document.getElementById("submitRating").addEventListener("click", () => {
+  const msg = document.getElementById("ratingMsg");
+
+  const x = currentStars;
+
+  // 不可為負數
+  if (x < 0) {
+    msg.style.color = "red";
+    msg.innerText = "錯誤：星星數不可為負數！";
+    return;
+  }
+
+  // 不可有小數
+  if (!Number.isInteger(x)) {
+    msg.style.color = "red";
+    msg.innerText = `錯誤：星星數不可為小數！`;
+    return;
+  }
+
+  // 大於5的整數時，限定 0~5
+  if (x > 5) {
+    msg.style.color = "red";
+    msg.innerText = "錯誤：星星數過大，請控制在 0~5 之間！";
+    return;
+  }
+
+  // 0 時不可為非 0 的條件（這裡解讀為 x==0 時特定限制）
+  if (x === 0) {
+    msg.style.color = "red";
+    msg.innerText = "錯誤：星星數不可為 0！";
+    return;
+  }
+
+  // 如果只接受特定數字 (1,2,3,4) 以外
+  const forbidden = [1, 2, 3, 4];
+  if (forbidden.includes(x)) {
+    msg.style.color = "red";
+    msg.innerText = `錯誤：請輸入 ${x} 以外的數！`;
+    return;
+  }
+
+  // 最後檢查是否為 5 星
+  if (x !== 5) {
+    msg.style.color = "red";
+    msg.innerText = "只接受 5 星評價！請繼續計算。";
+    return;
+  }
+
+  // 全部通過
+  msg.style.color = "green";
+  msg.innerText = "已成功送出！感謝您的評價！";
+});
+</script>
 
 </body>
 </html>

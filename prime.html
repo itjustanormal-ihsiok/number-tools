@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>質數計算器</title>
+<style>
+/* 原樣式不變 */
+body{font-family: Arial,"微軟正黑體";margin:0;background:#f0f0f0;text-align:center;padding:20px;}
+.stage{position:relative;margin:20px auto;background:#222;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.3);overflow:hidden;width:97vw;height:70vh;}
+.character-bg{position:absolute;inset:0;background-image:url("img/say.png");background-size:cover;background-repeat:no-repeat;background-position:center;opacity:0.95;}
+.output-frame{position:absolute;z-index:5;top:50%;left:50%;transform:translate(-50%,-50%);width:70%;min-height:140px;background:rgba(255,255,255,0.92);border:3px solid #333;border-radius:16px;box-shadow:0 5px 15px rgba(0,0,0,0.25);padding:15px 20px;display:flex;flex-direction:column;justify-content:center;align-items:center;}
+#line1,#line2{font-family: monospace;font-size:18px;line-height:1.5;}
+#primeFace,#divisibleFace{position:fixed;top:50%;left:55%;transform:translate(-50%,-50%) scale(1);opacity:0;pointer-events:none;z-index:20;}
+.prime-show{animation: primeFlash 1.2s ease-in-out forwards;}
+.divisible-show{animation: divisibleFlash 1.2s ease-in-out forwards;}
+@keyframes primeFlash{0%{opacity:0;transform:translate(-50%,-50%) scale(1.8);}20%{opacity:1;transform:translate(-50%,-50%) scale(2);}80%{opacity:1;transform:translate(-50%,-50%) scale(2);}100%{opacity:0;transform:translate(-50%,-50%) scale(2.1);}}
+@keyframes divisibleFlash{0%{opacity:0;transform:translate(-50%,-50%) scale(1.8);}20%{opacity:1;transform:translate(-50%,-50%) scale(2);}80%{opacity:1;transform:translate(-50%,-50%) scale(2);}100%{opacity:0;transform:translate(-50%,-50%) scale(2.1);}}
+.red{color:darkred;font-weight:bold;}
+.controls{margin-top:10px;}
+button{padding:6px 16px;font-size:14px;cursor:pointer;margin:3px;}
+input{width:90px;padding:4px;}
+</style>
+</head>
+<body>
+
+<h1>質數計算器</h1>
+
+<div class="controls">
+  <label>輸入數字 N：<input type="number" id="target" value="60"></label>
+  <label>天堂製造：<input type="number" id="speed" value="1" step="0.1" min="0.1"></label>
+  <br><br>
+  <button onclick="runFeature(()=>checkPrimeByCount(true))">質數判別（用數的）</button>
+  <button onclick="runFeature(()=>checkPrimeByDivide(true))">質數判別（用除的）</button>
+  <button onclick="runFeature(goldbachAllTest)">哥德巴赫驗證</button>
+  <button onclick="runFeature(factorization)">質因數分解</button>
+</div>
+
+<div class="stage">
+  <div class="character-bg"></div>
+  <img id="primeFace" src="img/prime.png">
+  <img id="divisibleFace" src="img/divisible.png">
+  <div class="output-frame">
+    <div id="line1"></div>
+    <div id="line2"></div>
+  </div>
+</div>
+
+<script>
+// --- 全域語速控制 ---
+function getSpeed(){ return parseFloat(document.getElementById('speed').value) || 1; }
+
+// --- 功能互斥鎖 ---
+let busy = false;
+async function runFeature(fn){
+  if(busy) return;
+  busy = true;
+  disableButtons(true);
+  await fn();
+  disableButtons(false);
+  busy = false;
+}
+function disableButtons(flag){
+  document.querySelectorAll('button').forEach(b=>b.disabled=flag);
+}
+
+// --- 質數 & 動畫 ---
+function generatePrimes(max){
+  const primes=[];
+  for(let n=2;n<=max;n++){
+    let ok=true;
+    for(let p of primes){ if(p*p>n) break; if(n%p===0){ok=false;break;} }
+    if(ok) primes.push(n);
+  }
+  return primes;
+}
+function renderXML(str){ return str.replace(/<prime>/g,'<span class="red">').replace(/<\/prime>/g,'</span>'); }
+async function showPrimeFace(){ const img=document.getElementById('primeFace'); img.style.display='inline'; img.classList.remove('prime-show'); void img.offsetWidth; img.classList.add('prime-show'); await delay(1200); img.style.display='none'; }
+async function showDivisibleFace(){ const img=document.getElementById('divisibleFace'); img.style.display='inline'; img.classList.remove('prime-show'); void img.offsetWidth; img.classList.add('prime-show'); await delay(1200); img.style.display='none'; }
+async function delay(ms){ return new Promise(r=>setTimeout(r, ms/getSpeed())); }
+
+// --- 慢速打字 ---
+async function typeSlowHTML(element, html, delayMs=45){
+  element.innerHTML="";
+  const temp=document.createElement('div'); temp.innerHTML=html;
+  async function append(node,parent){
+    if(node.nodeType===3){
+      for(let ch of node.textContent){
+        parent.appendChild(document.createTextNode(ch));
+        if(ch==='='||ch==='…') await delay(delayMs+200);
+        else await delay(delayMs);
+      }
+    } else if(node.nodeType===1){
+      const el=document.createElement(node.tagName);
+      for(let a of node.attributes) el.setAttribute(a.name,a.value);
+      parent.appendChild(el);
+      for(let c of node.childNodes) await append(c,el);
+    }
+  }
+  for(let c of temp.childNodes) await append(c,element);
+}
+
+async function typeSlowAppend(element, html, delayMs=45){
+  const temp=document.createElement('div'); temp.innerHTML=html;
+  async function appendNode(node,parent){
+    if(node.nodeType===3){
+      for(let ch of node.textContent){
+        parent.appendChild(document.createTextNode(ch));
+        if(ch==='='||ch==='…') await delay(delayMs+200);
+        else await delay(delayMs);
+      }
+    } else if(node.nodeType===1){
+      const el=document.createElement(node.tagName);
+      for(let a of node.attributes) el.setAttribute(a.name,a.value);
+      parent.appendChild(el);
+      for(let c of node.childNodes) await appendNode(c,el);
+    }
+  }
+  for(let c of temp.childNodes) await appendNode(c,element);
+}
+
+// --- 判斷質數 ---
+function isPrime(n){ if(n<2) return false; for(let i=2;i*i<=n;i++){if(n%i===0) return false;} return true; }
+async function tauntMultiples(N,userTriggered){
+  if(!userTriggered) return false;
+  if(N%5===0){ await typeSlowHTML(line2, renderXML(`這明顯不是質數，你個蠢猩猩`)); return true; }
+  else if(N%2===0){ await typeSlowHTML(line2, renderXML(`你的浮木不是偶數嗎？偶數不是質數都不知道？`)); return true; }
+  return false;
+}
+
+// --- 質數判別（用數的） ---
+async function checkPrimeByCount(userTriggered=false){
+  const N=parseInt(target.value);
+  line1.innerHTML="質數判別（用數的）"; line2.innerHTML="";
+  if(await tauntMultiples(N,userTriggered)) return;
+  if(N<2){ line2.innerHTML=renderXML(`${N} 不是質數！`); return; }
+  let p=2;
+  while(true){
+    if(isPrime(p)){
+      line2.innerHTML=renderXML(` <prime>${p}</prime>`);
+      await delay(1000);
+      if(p===N){ line2.innerHTML=renderXML(`${N} 是質數！`); await showPrimeFace(); return; }
+      if(p>N){ line2.innerHTML=renderXML(`${N} 不是質數！`); return; }
+    } p++;
+  }
+}
+
+// --- 質數判別（用除的） ---
+async function checkPrimeByDivide(userTriggered=false){
+  const N=parseInt(target.value); line1.innerHTML="質數判別（用除的）"; line2.innerHTML="";
+  if(await tauntMultiples(N,userTriggered)) return;
+  const primes=generatePrimes(Math.floor(Math.sqrt(N))+1);
+  for(let p of primes){
+    let a=Math.floor(N/p), b=N%p; line2.innerHTML="";
+    await typeSlowAppend(line2, `${N} ÷ `); await delay(300);
+    await typeSlowAppend(line2, renderXML(` <prime>${p}</prime> =`)); await delay(400);
+    await typeSlowAppend(line2, ` ${a} ... ${b}`); await delay(400);
+    if(b===0 && N!==p){ await typeSlowAppend(line2, ` → 不是質數！`); await showDivisibleFace(); return; }
+  }
+  line2.innerHTML=""; await typeSlowAppend(line2, `${N} 是 <prime>質數</prime>！`); await showPrimeFace();
+}
+
+// --- 系統用除的驗質數（可 silent） ---
+async function checkPrimeByDivideSystem(N,element){
+  const silent=!element; const primes=generatePrimes(Math.floor(Math.sqrt(N))+1); if(!silent) element.innerHTML="";
+  for(let p of primes){
+    let a=Math.floor(N/p), b=N%p; line2.innerHTML=""
+    if(!silent){
+      await typeSlowAppend(element, `${N} ÷ `); await delay(300);
+      await typeSlowAppend(element, renderXML(`<prime>${p}</prime> =`)); await delay(400);
+      await typeSlowAppend(element, ` ${a} ... ${b}`); await delay(400);
+    }
+    if(b===0 && N!==p){
+      if(!silent){ await typeSlowAppend(element, ` → 不是質數！`); await delay(400); }
+      return false;
+    }
+  }
+  if(!silent){ await typeSlowAppend(element, ` → 是質數！`); await showPrimeFace(); }
+  return true;
+}
+
+// --- 哥德巴赫驗證 ---
+async function goldbachAllTest(){
+  const N = parseInt(target.value);
+  if(N < 4 || N % 2 !== 0){ alert("請輸入大於4的偶數"); return; }
+
+  line1.innerHTML = "";
+  line2.innerHTML = "";
+
+  const primes = generatePrimes(N);
+  const results = [];
+
+  for(let p of primes){
+    let q = N - p;
+    if(q < p) break;
+
+    // 顯示慢速打字過程：N - p =
+    line1.innerHTML = "";
+    await typeSlowAppend(line1, `${N} - <span class="red">${p}</span>`);
+    await delay(400);
+    await typeSlowAppend(line1, ` = ${q}`);
+    await delay(400);
+
+    // 驗證 q 是否質數，保留慢速動畫在 line2
+    const isQPrime = await checkPrimeByDivideSystem(q, line2); 
+    if(isQPrime){
+      results.push([p,q]); // 只存數字對
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+
+  // 顯示最終所有合理組合（紅字）
+  const finalOutput = results.map(pair => 
+    `<span class="red">${pair[0]}</span> + <span class="red">${pair[1]}</span>`
+  ).join("，");
+
+  // 先換行，再慢速打字最終結果
+  line1.innerHTML = "";
+  await typeSlowAppend(line1, "\n所有合理組合：");
+  line2.innerHTML = finalOutput;
+}
+
+// --- 質因數分解 ---
+async function factorization(){
+  const N=parseInt(target.value); line1.innerHTML=''; line2.innerHTML='';
+  let factors=[], remaining=N;
+  const faceDiv=document.getElementById('primeFace');
+  const showFace=async()=>{ faceDiv.src='img/divisible.png'; faceDiv.classList.remove('prime-show'); void faceDiv.offsetWidth; faceDiv.classList.add('prime-show'); await delay(600); };
+  while(remaining>1){
+    let a=2, found=false;
+    while(a<=remaining){
+      const isPrimeA=await checkPrimeByDivideSystem(a,null);
+      if(!isPrimeA){ a++; continue; }
+      const quotient=Math.floor(remaining/a), remainder=remaining%a, redA=`<span class="red">${a}</span>`;
+      let history=factors.map(x=>`<span class="red">${x}</span>`).join(' ÷ '), prefix=history?`${N} ÷ ${history}`:`${N}`; line1.innerHTML='';
+      await typeSlowAppend(line1, `${prefix} ÷ ${redA}`); await delay(300);
+      await typeSlowAppend(line1, ` =`); await delay(300);
+      await typeSlowAppend(line1, ` ${quotient} ...`); await delay(300);
+      await typeSlowAppend(line1, ` ${remainder}`); await delay(300);
+      if(remainder===0){ await showDivisibleFace(); factors.push(a); remaining=quotient; found=true;
+        if(remaining>1){ const isPrimeRemain=await checkPrimeByDivideSystem(remaining,line2); line1.innerHTML=''; if(isPrimeRemain){ factors.push(remaining); await typeSlowAppend(line1, `${N} ÷ ${factors.map(x=>`<span class="red">${x}</span>`).join(' ÷ ')} = 1`); line2.innerHTML=`質因數：${factors.map(x=>`<span class="red">${x}</span>`).join(' × ')}`; return factors; } }
+        break;
+      } else { a++; }
+    }
+    if(!found) break;
+  }
+  if(factors.length===0){ line2.innerHTML=`質因數：<span class="red">${N}</span>`; return [N]; }
+  line2.innerHTML=`質因數：${factors.map(x=>`<span class="red">${x}</span>`).join(' × ')}`;
+  return factors;
+}
+</script>
+</body>
+</html>

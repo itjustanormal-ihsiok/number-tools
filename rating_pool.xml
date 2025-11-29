@@ -1,0 +1,27 @@
+<pool>
+    <!-- 基本計算 -->
+    <item formula="x * x" />
+    <item formula="x + 1111" />
+    <item formula="x / 2 + 3" />
+    <item formula="(x + 5) * 1.2" />
+    <item formula="x * 10" />
+    <item formula="Math.pow(x - 3, 3) / x" />
+
+    <!-- 小數精簡版（五位） -->
+    <item formula="x * 0.5" />
+    <item formula="x / 128" />
+    <item formula="x * 1.3125" />
+
+    <!-- 進階一點 -->
+    <item formula="Math.log(x + 10)" />
+    <item formula="Math.sqrt(x)" />
+    <item formula="Math.cos(x / 3) * 5" />
+
+    <!-- 特殊（刷新用） -->
+    <item formula="(x + 1 ) * (x - 1)" refresh="true" />
+    <item formula="x + 3" refresh="true" />
+    <item formula="x * -21" refresh="true" />
+    <item formula="(x * 2 - 1)" refresh="true" />
+    <item formula="x * Math.PI" refresh="true" />
+    <item formula="Math.round(x) * 1.3" refresh="true" />
+</pool>
